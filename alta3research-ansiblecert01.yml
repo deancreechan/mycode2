@@ -1,0 +1,87 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  vars:
+    my_file: "/tmp/alta3_research.txt"
+
+  tasks:
+  - name: Check if today has a 'T' in its name
+    set_fact:
+      today_has_t: "{{ ('T' in ansible_date_time['weekday']) }}"
+
+  - name: Execute the Hello_from_Enbridge script if today has a 'T'
+    script: scripts/Hello_from_Enbridge.sh
+    when: today_has_t
+
+  - name: Echo a note if today doesn't have a 'T'
+    debug:
+      msg: "Wait for a day with a 'T' to run the script."
+    when: not today_has_t
+
+  - name: Make an API request to fetch astronaut data
+    uri:
+      url: http://api.open-notify.org/astros.json
+      return_content: yes
+    register: astronaut_data
+
+  - name: Filter astronauts on the ISS
+    set_fact:
+      astronauts_on_iss: "{{ astronaut_data.json.people | selectattr('craft', 'equalto', 'ISS') | list }}"
+
+  - name: Display names of astronauts currently in space
+    debug:
+      msg: "Astronaut {{ item.name }} is currently in space on the {{ item.craft }}."
+    loop: "{{ astronaut_data.json.people }}"
+
+  - name: Invoke a simple Bash script to echo 'Hello from Enbridge'
+    script: scripts/Hello_from_Enbridge.sh
+    register: script_output
+
+  - name: Display script output
+    debug:
+      var: script_output.stdout_lines
+
+  - name: Create a file in an idempotent manner
+    copy:
+      dest: "{{ my_file }}"
+      content: "Hello from Alta3 Research!\n"
+      force: no
+
+  - name: Display names of astronauts currently on ISS
+    debug:
+      msg: "Astronaut {{ item.name }} is currently on the ISS."
+    loop: "{{ astronauts_on_iss }}"
+
+  - name: Send each astronaut on the ISS a reminder message
+    debug:
+      msg: "Reminder sent to {{ item.name }}: Don't forget to eat your vegetables!"
+    loop: "{{ astronauts_on_iss }}"
+
+  - name: Ensure user 'john' exists for day-to-day tasks
+    user:
+      name: john
+      state: present
+    become: true
+
+  - name: Check if port 22 (SSH) is open on localhost
+    wait_for:
+      port: 22
+      timeout: 10
+    register: port_check
+    ignore_errors: true
+
+  - name: Display port status
+    debug:
+      msg: "Port 22 (SSH) is open!"
+    when: port_check is not failed
+
+  - name: Set the filename with current date and time
+    set_fact:
+      cert_file_name: "scripts/Cert_{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}-{{ ansible_date_time.minute }}.txt"
+
+  - name: Copy astronaut data to the dynamically named Cert.txt
+    become: yes
+    copy:
+      dest: "{{ cert_file_name }}"
+      content: "{{ astronaut_data.json | to_nice_json }}"
+
